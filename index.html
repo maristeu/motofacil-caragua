@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>MotoFácil Caraguá</title>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCzhq4KXViS7fI0ax8fwzCmNpmfaotd6FU",
+    authDomain: "pizzaria-cjrv.firebaseapp.com",
+    projectId: "pizzaria-cjrv",
+    storageBucket: "pizzaria-cjrv.firebasestorage.app",
+    messagingSenderId: "952169931185",
+    appId: "1:952169931185:web:f3913482682a81affd5d90"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const ADMIN_WA = "5511967581409";
+
+  // ---- TABELA DE PREÇOS ----
+  const TARIFA_BASE = 3.50;
+  const PRECO_KM = 0.97;
+  const PRECO_MIN = 0.16;
+  const TAXA_PLATAFORMA = 0.10;
+  const MINIMO = 7.00;
+
+  function getMultiplicador() {
+    const agora = new Date();
+    const hora = agora.getHours();
+    const dia = agora.getDay(); // 0=dom, 6=sab
+    const feriados = ["01-01","21-04","01-05","07-09","12-10","02-11","15-11","25-12"];
+    const hoje = `${String(agora.getMonth()+1).padStart(2,'0')}-${String(agora.getDate()).padStart(2,'0')}`;
+
+    if (feriados.includes(hoje)) return { mult: 1.5, label: "🎉 Feriado", cor: "#f59e0b" };
+    if (dia === 0 || dia === 6) return { mult: 1.3, label: "🗓️ Fim de semana", cor: "#8b5cf6" };
+    if (hora >= 7 && hora <= 9) return { mult: 1.2, label: "⏰ Pico manhã", cor: "#3b82f6" };
+    if (hora >= 17 && hora <= 19) return { mult: 1.2, label: "⏰ Pico tarde", cor: "#3b82f6" };
+    if (hora >= 22 || hora < 6) return { mult: 1.2, label: "🌙 Noturno", cor: "#6366f1" };
+    return { mult: 1.0, label: "✅ Normal", cor: "#22c55e" };
+  }
+
+  function calcularCorrida(km, minutos) {
+    const { mult } = getMultiplicador();
+    const bruto = (TARIFA_BASE + (PRECO_KM * km) + (PRECO_MIN * minutos)) * mult;
+    const total = Math.max(bruto, MINIMO);
+    const plataforma = total * TAXA_PLATAFORMA;
+    const motoboy = total * (1 - TAXA_PLATAFORMA);
+    return {
+      total: total.toFixed(2),
+      plataforma: plataforma.toFixed(2),
+      motoboy: motoboy.toFixed(2),
+      mult
+    };
+  }
+
+  // Distâncias estimadas em Caraguatatuba (em km, min)
+  const DESTINOS_CARAGUA = {
+    "praia das palmeiras": { km: 4, min: 10, label: "Praia das Palmeiras" },
+    "palmeiras": { km: 4, min: 10, label: "Praia das Palmeiras" },
+    "porto novo": { km: 7, min: 15, label: "Porto Novo" },
+    "porto": { km: 7, min: 15, label: "Porto Novo" },
+    "praia do norte": { km: 11, min: 20, label: "Praia do Norte" },
+    "indaia": { km: 5, min: 12, label: "Praia do Indaiá" },
+    "indaiá": { km: 5, min: 12, label: "Praia do Indaiá" },
+    "tabatinga": { km: 9, min: 18, label: "Tabatinga" },
+    "martim de sa": { km: 13, min: 25, label: "Martim de Sá" },
+    "martim": { km: 13, min: 25, label: "Martim de Sá" },
+    "hospital": { km: 2, min: 6, label: "Hospital Municipal" },
+    "shopping": { km: 3, min: 8, label: "Shopping Caraguá" },
+    "rodoviaria": { km: 2, min: 5, label: "Rodoviária" },
+    "rodoviária": { km: 2, min: 5, label: "Rodoviária" },
+    "aeroporto": { km: 5, min: 12, label: "Aeroporto SJK" },
+    "santamarina": { km: 6, min: 13, label: "Pontal Santa Marina" },
+    "santa marina": { km: 6, min: 13, label: "Pontal Santa Marina" },
+    "pontal": { km: 6, min: 13, label: "Pontal Santa Marina" },
+    "estrela": { km: 4, min: 9, label: "Estrela d'Alva" },
+    "massaguacu": { km: 8, min: 16, label: "Massaguaçu" },
+    "massaguaçu": { km: 8, min: 16, label: "Massaguaçu" },
+  };
+
+  function encontrarDestino(texto) {
+    const t = texto.toLowerCase();
+    for (const [key, val] of Object.entries(DESTINOS_CARAGUA)) {
+      if (t.includes(key)) return val;
+    }
+    // Genérico baseado em tamanho do texto
+    const km = 3 + (texto.length % 8);
+    return { km, min: km * 2.2, label: texto };
+  }
+
+  // ---- NAVEGAÇÃO ----
+  window.show = function(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    window.scrollTo(0,0);
+  }
+
+  // ---- ATUALIZA BADGE TARIFA ----
+  function atualizarBadgeTarifa() {
+    const { mult, label, cor } = getMultiplicador();
+    document.querySelectorAll('.tarifa-badge').forEach(el => {
+      el.textContent = `${label} • ${mult}x`;
+      el.style.background = cor + '22';
+      el.style.color = cor;
+      el.style.borderColor = cor + '44';
+    });
+  }
+
+  // ---- CALCULAR PREÇO AO DIGITAR ----
+  window.atualizarPreco = function() {
+    const destino = document.getElementById('p-destino').value;
+    const btn = document.getElementById('btn-pedir');
+    const preview = document.getElementById('preco-preview');
+
+    if (destino.length < 3) {
+      preview.style.display = 'none';
+      btn.disabled = true;
+      return;
+    }
+
+    const dest = encontrarDestino(destino);
+    const { total, motoboy, mult } = calcularCorrida(dest.km, dest.min);
+    const { label, cor } = getMultiplicador();
+
+    preview.style.display = 'block';
+    document.getElementById('prev-total').textContent = `R$${total}`;
+    document.getElementById('prev-km').textContent = `${dest.km} km • ~${Math.round(dest.min)} min`;
+    document.getElementById('prev-tarifa').textContent = `${label} (${mult}x)`;
+    document.getElementById('prev-tarifa').style.color = cor;
+
+    btn.disabled = false;
+    btn.textContent = `🏍️ Solicitar por R$${total}`;
+
+    // Salva pra usar depois
+    window._corridaAtual = { dest, total, motoboy };
+  }
+
+  // ---- PEDIR CORRIDA ----
+  window.pedirCorrida = async function() {
+    const nome = document.getElementById('p-nome').value.trim();
+    const tel = document.getElementById('p-tel').value.replace(/\D/g,'');
+    const origem = document.getElementById('p-origem').value.trim();
+    const destino = document.getElementById('p-destino').value.trim();
+
+    if (!nome || !tel || !origem || !destino) { alert('Preencha todos os campos!'); return; }
+
+    const btn = document.getElementById('btn-pedir');
+    btn.disabled = true; btn.textContent = 'Enviando...';
+
+    const { total, motoboy } = window._corridaAtual || { total: '10.00', motoboy: '9.00' };
+    const { label, mult } = getMultiplicador();
+
+    try {
+      const ref = await addDoc(collection(db, "corridas"), {
+        passageiro: nome, telefone: tel, origem, destino,
+        preco: parseFloat(total), ganhoMotoboy: parseFloat(motoboy),
+        multiplicador: mult, periodoTarifa: label,
+        status: "aguardando", criadoEm: serverTimestamp()
+      });
+
+      const msg = `🚨 *NOVA CORRIDA - MotoFácil Caraguá*\n\n👤 ${nome}\n📞 ${tel}\n📍 ${origem} → ${destino}\n💰 R$${total} (${label} ${mult}x)\n🏍️ Motoboy recebe: R$${motoboy}\n\n_ID: ${ref.id.slice(0,8).toUpperCase()}_`;
+      window.open(`https://wa.me/${ADMIN_WA}?text=${encodeURIComponent(msg)}`, '_blank');
+
+      document.getElementById('conf-id').textContent = ref.id.slice(0,8).toUpperCase();
+      document.getElementById('conf-preco').textContent = `R$${total}`;
+      document.getElementById('conf-destino').textContent = destino;
+      document.getElementById('conf-tarifa').textContent = `${label} (${mult}x)`;
+      show('corrida-ok');
+    } catch(e) { alert('Erro. Tente novamente.'); console.error(e); }
+
+    btn.disabled = false;
+  }
+
+  // ---- CADASTRO MOTORISTA ----
+  window.cadastrarMotorista = async function() {
+    const nome = document.getElementById('m-nome').value.trim();
+    const tel = document.getElementById('m-tel').value.replace(/\D/g,'');
+    const moto = document.getElementById('m-moto').value.trim();
+    const cnh = document.getElementById('m-cnh').value.trim();
+    const pix = document.getElementById('m-pix').value.trim();
+
+    if (!nome || !tel || !moto || !cnh || !pix) { alert('Preencha todos os campos!'); return; }
+
+    const btn = document.getElementById('btn-cadastrar');
+    btn.disabled = true; btn.textContent = 'Enviando...';
+
+    try {
+      await addDoc(collection(db, "motoristas"), {
+        nome, telefone: tel, moto, cnh, pix,
+        status: "pendente", corridas: 0, criadoEm: serverTimestamp()
+      });
+      const msg = `🏍️ *NOVO MOTORISTA - MotoFácil Caraguá*\n\nNome: ${nome}\nTel: ${tel}\nMoto: ${moto}\nCNH: ${cnh}\nPix: ${pix}`;
+      window.open(`https://wa.me/${ADMIN_WA}?text=${encodeURIComponent(msg)}`, '_blank');
+      show('cadastro-ok');
+    } catch(e) { alert('Erro. Tente novamente.'); }
+
+    btn.disabled = false;
+  }
+
+  // ---- ADMIN ----
+  window.abrirAdmin = function() {
+    if (document.getElementById('admin-senha').value !== 'motofacil2024') {
+      document.getElementById('admin-erro').style.display = 'block'; return;
+    }
+    show('admin-painel');
+    carregarAdmin();
+  }
+
+  function carregarAdmin() {
+    onSnapshot(query(collection(db, "corridas"), orderBy("criadoEm","desc")), snap => {
+      document.getElementById('total-corridas').textContent = snap.size;
+      const lista = document.getElementById('lista-corridas');
+      lista.innerHTML = snap.empty ? '<p class="vazio">Nenhuma corrida ainda</p>' : '';
+      let receitaTotal = 0;
+      snap.forEach(d => {
+        const c = d.data();
+        const taxa = (c.preco * 0.1).toFixed(2);
+        receitaTotal += parseFloat(taxa);
+        const cor = c.status === 'aguardando' ? '#f59e0b' : c.status === 'aceita' ? '#22c55e' : '#888';
+        lista.innerHTML += `
+          <div class="admin-item">
+            <div class="admin-item-top">
+              <span class="badge" style="background:${cor}22;color:${cor};border:1px solid ${cor}44">${c.status}</span>
+              <span class="admin-valor">R$${c.preco?.toFixed(2)}</span>
+            </div>
+            <div class="admin-det">👤 ${c.passageiro} • 📞 ${c.telefone}</div>
+            <div class="admin-det">📍 ${c.origem} → ${c.destino}</div>
+            <div class="admin-det" style="color:#f59e0b">⏱️ ${c.periodoTarifa || 'Normal'} • Sua taxa: R$${taxa}</div>
+            ${c.status==='aguardando' ? `<button class="btn-aceitar-admin" onclick="aceitarCorrida('${d.id}')">✅ Aceitar e notificar motoboy</button>` : ''}
+          </div>`;
+      });
+      document.getElementById('receita-total').textContent = `R$${receitaTotal.toFixed(2)}`;
+    });
+
+    onSnapshot(query(collection(db, "motoristas"), orderBy("criadoEm","desc")), snap => {
+      document.getElementById('total-motoristas').textContent = snap.size;
+      const lista = document.getElementById('lista-motoristas');
+      lista.innerHTML = snap.empty ? '<p class="vazio">Nenhum motorista ainda</p>' : '';
+      snap.forEach(d => {
+        const m = d.data();
+        const cor = m.status === 'aprovado' ? '#22c55e' : '#f59e0b';
+        lista.innerHTML += `
+          <div class="admin-item">
+            <div class="admin-item-top">
+              <span class="badge" style="background:${cor}22;color:${cor};border:1px solid ${cor}44">${m.status}</span>
+              <span style="font-size:12px;color:#888">${m.corridas} corridas</span>
+            </div>
+            <div class="admin-det">👤 ${m.nome} • 🏍️ ${m.moto}</div>
+            <div class="admin-det">📞 ${m.telefone} • Pix: ${m.pix}</div>
+            ${m.status==='pendente' ? `<button class="btn-aceitar-admin" onclick="aprovarMotorista('${d.id}','${m.nome}','${m.telefone}')">✅ Aprovar</button>` : ''}
+          </div>`;
+      });
+    });
+  }
+
+  window.aceitarCorrida = async function(id) {
+    await updateDoc(doc(db, "corridas", id), { status: "aceita" });
+  }
+
+  window.aprovarMotorista = async function(id, nome, tel) {
+    await updateDoc(doc(db, "motoristas", id), { status: "aprovado" });
+    const msg = `✅ *MotoFácil Caraguá*\n\nOlá ${nome}! Seu cadastro foi aprovado! Bem-vindo à equipe! 🏍️\n\nFique online e aguarde as corridas.`;
+    window.open(`https://wa.me/55${tel}?text=${encodeURIComponent(msg)}`, '_blank');
+  }
+
+  window.switchTab = function(id, el) {
+    document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    el.classList.add('active');
+  }
+
+  // Init
+  window.addEventListener('load', () => {
+    atualizarBadgeTarifa();
+    setInterval(atualizarBadgeTarifa, 60000);
+  });
+</script>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&display=swap');
+  :root { --laranja:#FF5E1A; --rosa:#D9004C; --grad:linear-gradient(135deg,#FF5E1A,#D9004C); --dark:#0D0D0D; --card:#1A1A1A; --border:#2A2A2A; --muted:#888; }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{background:var(--dark);color:#fff;font-family:'Inter',sans-serif;display:flex;justify-content:center}
+  .phone{width:100%;max-width:440px;min-height:100vh}
+  .screen{display:none;flex-direction:column;min-height:100vh;animation:fadeIn .25s ease}
+  .screen.active{display:flex}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+  /* SPLASH */
+  #splash{background:var(--grad);align-items:center;justify-content:center;gap:10px;padding:40px 24px;text-align:center}
+  #splash .icon{font-size:80px;animation:bounce 1.5s ease infinite alternate}
+  @keyframes bounce{from{transform:translateY(0)}to{transform:translateY(-10px)}}
+  #splash h1{font-family:'Bebas Neue',sans-serif;font-size:64px;line-height:1;letter-spacing:2px}
+  #splash p{font-size:14px;opacity:.85}
+
+  /* BOTÕES */
+  .btn-full{width:100%;background:var(--grad);color:#fff;border:none;border-radius:16px;padding:18px;font-family:'Inter',sans-serif;font-size:16px;font-weight:800;cursor:pointer;transition:transform .15s,opacity .15s}
+  .btn-full:active{transform:scale(.98);opacity:.9}
+  .btn-full:disabled{opacity:.4;cursor:not-allowed}
+  .btn-ghost{width:100%;background:rgba(255,255,255,.12);color:#fff;border:1.5px solid rgba(255,255,255,.25);border-radius:16px;padding:15px;font-family:'Inter',sans-serif;font-size:15px;font-weight:700;cursor:pointer}
+
+  /* TOPBAR */
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:20px 20px 8px}
+  .topbar .logo{font-family:'Bebas Neue',sans-serif;font-size:26px;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .back-btn{background:var(--card);border:none;color:#fff;width:38px;height:38px;border-radius:12px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+
+  /* TARIFA BADGE */
+  .tarifa-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid;margin-bottom:16px}
+
+  /* ROLE SELECT */
+  #role-select{align-items:center;justify-content:center;padding:32px 24px;gap:14px}
+  #role-select h2{font-family:'Bebas Neue',sans-serif;font-size:36px;text-align:center}
+  #role-select p{color:var(--muted);font-size:13px;text-align:center;margin-bottom:4px}
+  .role-card{width:100%;background:var(--card);border-radius:20px;padding:22px;border:2px solid var(--border);cursor:pointer;transition:border-color .2s,transform .15s;display:flex;align-items:center;gap:16px}
+  .role-card:active{transform:scale(.98)}
+  .role-card.destaque{border-color:transparent;background:var(--grad)}
+  .role-icon{font-size:38px}
+  .role-info h3{font-size:17px;font-weight:800}
+  .role-info p{font-size:13px;color:var(--muted);margin-top:3px}
+  .role-card.destaque .role-info p{color:rgba(255,255,255,.8)}
+
+  /* FORMS */
+  .form-wrap{padding:16px 20px 40px;flex:1}
+  .form-title{font-family:'Bebas Neue',sans-serif;font-size:30px;margin-bottom:4px}
+  .form-sub{color:var(--muted);font-size:13px;margin-bottom:20px;line-height:1.5}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px}
+  .field input{width:100%;background:var(--card);border:1.5px solid var(--border);border-radius:14px;padding:14px 16px;color:#fff;font-family:'Inter',sans-serif;font-size:15px;outline:none;transition:border-color .2s}
+  .field input:focus{border-color:var(--laranja)}
+  .field input::placeholder{color:var(--muted)}
+  .divider{height:1px;background:var(--border);margin:14px 0}
+
+  /* PREVIEW PREÇO */
+  #preco-preview{background:var(--grad);border-radius:16px;padding:16px 18px;margin-bottom:14px;display:none}
+  .prev-valor{font-family:'Bebas Neue',sans-serif;font-size:48px;line-height:1}
+  .prev-det{font-size:12px;opacity:.85;margin-top:4px}
+  .prev-tarifa{font-size:12px;font-weight:700;margin-top:2px}
+
+  /* SUCCESS */
+  .success-screen{align-items:center;justify-content:center;padding:40px 24px;gap:12px;text-align:center}
+  .check-circle{width:100px;height:100px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:48px;animation:popIn .4s cubic-bezier(.175,.885,.32,1.275)}
+  @keyframes popIn{from{transform:scale(0);opacity:0}to{transform:scale(1);opacity:1}}
+  .success-screen h2{font-family:'Bebas Neue',sans-serif;font-size:34px}
+  .success-screen p{color:var(--muted);font-size:14px;line-height:1.6}
+  .info-box{background:var(--card);border-radius:16px;padding:18px;width:100%;margin:8px 0}
+  .info-row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border)}
+  .info-row:last-child{border-bottom:none}
+  .info-label{font-size:12px;color:var(--muted)}
+  .info-value{font-size:14px;font-weight:700}
+  .info-value.destaque{color:var(--laranja)}
+
+  /* TABELA PREÇOS */
+  #tabela-precos{padding:20px}
+  .tabela-title{font-family:'Bebas Neue',sans-serif;font-size:28px;margin-bottom:4px}
+  .tabela-sub{color:var(--muted);font-size:13px;margin-bottom:20px;line-height:1.5}
+  .periodo-card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:10px;border-left:4px solid}
+  .periodo-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .periodo-nome{font-size:15px;font-weight:800}
+  .periodo-mult{font-family:'Bebas Neue',sans-serif;font-size:28px}
+  .periodo-det{font-size:12px;color:var(--muted);line-height:1.6}
+  .exemplo-corrida{background:var(--dark);border-radius:10px;padding:10px 12px;margin-top:8px;font-size:12px;display:flex;justify-content:space-between}
+  .ex-label{color:var(--muted)}
+  .ex-valor{font-weight:700}
+
+  /* ADMIN */
+  #admin-login{align-items:center;justify-content:center;padding:40px 24px;gap:14px}
+  #admin-login h2{font-family:'Bebas Neue',sans-serif;font-size:34px}
+  #admin-erro{color:#f87171;font-size:13px;display:none}
+  #admin-painel{padding-bottom:20px}
+  .stats-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:0 16px 16px}
+  .stat-box{background:var(--card);border-radius:14px;padding:14px;text-align:center}
+  .stat-num{font-family:'Bebas Neue',sans-serif;font-size:32px;color:var(--laranja)}
+  .stat-label{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+  .admin-tabs{display:flex;border-bottom:1px solid var(--border);margin:0 16px 14px}
+  .admin-tab{flex:1;padding:12px;text-align:center;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
+  .admin-tab.active{color:var(--laranja);border-bottom-color:var(--laranja)}
+  .admin-section{display:none;padding:0 16px}
+  .admin-section.active{display:block}
+  .admin-item{background:var(--card);border-radius:16px;padding:16px;margin-bottom:10px;border:1.5px solid var(--border)}
+  .admin-item-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .badge{font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;text-transform:uppercase;letter-spacing:1px}
+  .admin-valor{font-family:'Bebas Neue',sans-serif;font-size:26px}
+  .admin-det{font-size:13px;color:var(--muted);margin-bottom:3px}
+  .btn-aceitar-admin{width:100%;margin-top:10px;background:#22c55e;color:#fff;border:none;border-radius:12px;padding:12px;font-family:'Inter',sans-serif;font-size:14px;font-weight:700;cursor:pointer}
+  .vazio{color:var(--muted);text-align:center;padding:32px 0;font-size:14px}
+  .section-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:12px}
+</style>
+</head>
+<body>
+<div class="phone">
+
+<!-- SPLASH -->
+<div id="splash" class="screen active">
+  <div class="icon">🏍️</div>
+  <h1>MotoFácil<br>Caraguá</h1>
+  <p>A corrida é sua. O lucro é seu.</p>
+  <p style="font-size:12px;opacity:.7;margin-bottom:8px">Taxa justa de só 10% • Pix na hora</p>
+  <div class="tarifa-badge" style="margin-top:8px"></div>
+  <button class="btn-full" onclick="show('role-select')" style="background:#fff;color:#D9004C;max-width:260px;margin-top:8px">Entrar no app</button>
+</div>
+
+<!-- ROLE SELECT -->
+<div id="role-select" class="screen">
+  <div style="height:50px"></div>
+  <div style="font-size:52px;text-align:center">👋</div>
+  <h2 style="font-family:'Bebas Neue',sans-serif;font-size:34px;text-align:center;margin:8px 0 4px">Você é...</h2>
+  <p style="color:var(--muted);font-size:13px;text-align:center;margin-bottom:8px">Como quer usar o MotoFácil hoje?</p>
+  <div class="tarifa-badge"></div>
+
+  <div class="role-card destaque" onclick="show('passageiro-form')">
+    <div class="role-icon">🙋</div>
+    <div class="role-info"><h3>Sou passageiro</h3><p>Quero pedir uma corrida agora</p></div>
+  </div>
+  <div class="role-card" onclick="show('motorista-form')">
+    <div class="role-icon">🏍️</div>
+    <div class="role-info"><h3>Sou motorista</h3><p style="color:var(--muted)">Quero me cadastrar na plataforma</p></div>
+  </div>
+  <div class="role-card" onclick="show('tabela-precos')" style="border-color:#f59e0b44">
+    <div class="role-icon">💰</div>
+    <div class="role-info"><h3>Ver tabela de preços</h3><p style="color:var(--muted)">Quanto custa cada corrida</p></div>
+  </div>
+  <button class="btn-ghost" onclick="show('admin-login')" style="margin-top:4px">🔐 Área admin</button>
+</div>
+
+<!-- PASSAGEIRO FORM -->
+<div id="passageiro-form" class="screen">
+  <div class="topbar">
+    <button class="back-btn" onclick="show('role-select')">←</button>
+    <div class="logo">Pedir corrida</div>
+    <div style="width:38px"></div>
+  </div>
+  <div class="form-wrap">
+    <div class="tarifa-badge"></div>
+    <div class="form-title">Para onde você vai? 📍</div>
+    <div class="form-sub">Veja o preço antes de confirmar. Sempre mais barato que o Uber.</div>
+
+    <div class="field"><label>Seu nome</label><input id="p-nome" type="text" placeholder="Ex: Maria Silva"/></div>
+    <div class="field"><label>Seu WhatsApp</label><input id="p-tel" type="tel" placeholder="Ex: 12 99999-9999"/></div>
+    <div class="divider"></div>
+    <div class="field"><label>Ponto de partida</label><input id="p-origem" type="text" placeholder="Ex: Rua das Flores, 123 - Centro" value="Centro, Caraguatatuba"/></div>
+    <div class="field"><label>Destino</label><input id="p-destino" type="text" placeholder="Ex: Praia das Palmeiras" oninput="atualizarPreco()"/></div>
+
+    <div id="preco-preview">
+      <div class="prev-valor" id="prev-total">R$0</div>
+      <div class="prev-det" id="prev-km">— km • — min</div>
+      <div class="prev-tarifa" id="prev-tarifa"></div>
+    </div>
+
+    <button class="btn-full" id="btn-pedir" onclick="pedirCorrida()" disabled>🏍️ Solicitar corrida</button>
+    <p style="font-size:12px;color:var(--muted);text-align:center;margin-top:12px">Você paga Pix direto ao motoboy no fim da corrida</p>
+  </div>
+</div>
+
+<!-- CORRIDA OK -->
+<div id="corrida-ok" class="screen success-screen">
+  <div class="check-circle">✓</div>
+  <h2>Pedido enviado!</h2>
+  <p>Um motoboy vai entrar em contato pelo WhatsApp em instantes.</p>
+  <div class="info-box">
+    <div class="info-row"><span class="info-label">Código</span><span class="info-value destaque" id="conf-id">—</span></div>
+    <div class="info-row"><span class="info-label">Destino</span><span class="info-value" id="conf-destino">—</span></div>
+    <div class="info-row"><span class="info-label">Valor total</span><span class="info-value destaque" id="conf-preco">—</span></div>
+    <div class="info-row"><span class="info-label">Tarifa</span><span class="info-value" id="conf-tarifa">—</span></div>
+    <div class="info-row"><span class="info-label">Pagamento</span><span class="info-value">Pix ao motorista no fim</span></div>
+  </div>
+  <button class="btn-full" onclick="show('role-select')">🏠 Voltar ao início</button>
+</div>
+
+<!-- MOTORISTA FORM -->
+<div id="motorista-form" class="screen">
+  <div class="topbar">
+    <button class="back-btn" onclick="show('role-select')">←</button>
+    <div class="logo">Cadastro</div>
+    <div style="width:38px"></div>
+  </div>
+  <div class="form-wrap">
+    <div class="form-title">Trabalhe com a gente 🏍️</div>
+    <div class="form-sub">Taxa de só 10%. Você fica com 90%. Ganhe mais nos fins de semana e feriados. Pix na hora.</div>
+    <div class="field"><label>Nome completo</label><input id="m-nome" type="text" placeholder="Ex: João da Silva"/></div>
+    <div class="field"><label>WhatsApp</label><input id="m-tel" type="tel" placeholder="Ex: 12 99999-9999"/></div>
+    <div class="field"><label>Moto (modelo e ano)</label><input id="m-moto" type="text" placeholder="Ex: Honda CG 160 2022"/></div>
+    <div class="field"><label>Número da CNH</label><input id="m-cnh" type="text" placeholder="Ex: 12345678900"/></div>
+    <div class="field"><label>Chave Pix</label><input id="m-pix" type="text" placeholder="CPF, telefone ou e-mail"/></div>
+    <div style="height:16px"></div>
+    <button class="btn-full" id="btn-cadastrar" onclick="cadastrarMotorista()">Enviar cadastro</button>
+    <p style="font-size:12px;color:var(--muted);text-align:center;margin-top:12px">Análise em até 24h</p>
+  </div>
+</div>
+
+<!-- CADASTRO OK -->
+<div id="cadastro-ok" class="screen success-screen">
+  <div class="check-circle">✓</div>
+  <h2>Cadastro enviado!</h2>
+  <p>Vamos analisar e entrar em contato pelo WhatsApp em até 24h.</p>
+  <div class="info-box">
+    <div class="info-row"><span class="info-label">Sua taxa</span><span class="info-value destaque">10% apenas</span></div>
+    <div class="info-row"><span class="info-label">Você recebe</span><span class="info-value destaque">90% de cada corrida</span></div>
+    <div class="info-row"><span class="info-label">Fim de semana</span><span class="info-value" style="color:#8b5cf6">+30% no valor</span></div>
+    <div class="info-row"><span class="info-label">Feriados</span><span class="info-value" style="color:#f59e0b">+50% no valor</span></div>
+    <div class="info-row"><span class="info-label">Pagamento</span><span class="info-value">Pix na hora, toda corrida</span></div>
+  </div>
+  <button class="btn-full" onclick="show('role-select')">🏠 Voltar ao início</button>
+</div>
+
+<!-- TABELA DE PREÇOS -->
+<div id="tabela-precos" class="screen">
+  <div class="topbar">
+    <button class="back-btn" onclick="show('role-select')">←</button>
+    <div class="logo">Tabela de Preços</div>
+    <div style="width:38px"></div>
+  </div>
+  <div style="padding:16px 20px 40px">
+    <div class="tabela-title">Transparência total 💰</div>
+    <div class="tabela-sub">Você sabe o preço antes de pedir. Sem surpresa, sem preço dinâmico escondido.</div>
+
+    <div class="periodo-card" style="border-color:#22c55e">
+      <div class="periodo-header">
+        <div><div class="periodo-nome" style="color:#22c55e">✅ Horário Normal</div><div style="font-size:12px;color:var(--muted)">Seg–Sex, 6h às 17h</div></div>
+        <div class="periodo-mult" style="color:#22c55e">1.0x</div>
+      </div>
+      <div class="periodo-det">Tarifa base + R$0,97/km + R$0,16/min<br>Mínimo: R$7,00</div>
+      <div class="exemplo-corrida"><span class="ex-label">Centro → Palmeiras (4km)</span><span class="ex-valor">~R$9,00</span></div>
+      <div class="exemplo-corrida"><span class="ex-label">Centro → Porto Novo (7km)</span><span class="ex-valor">~R$14,00</span></div>
+    </div>
+
+    <div class="periodo-card" style="border-color:#3b82f6">
+      <div class="periodo-header">
+        <div><div class="periodo-nome" style="color:#3b82f6">⏰ Horário de Pico</div><div style="font-size:12px;color:var(--muted)">7h–9h e 17h–19h (dias úteis)</div></div>
+        <div class="periodo-mult" style="color:#3b82f6">1.2x</div>
+      </div>
+      <div class="periodo-det">Tarifa normal × 1.2<br>Motoboy ganha 20% a mais</div>
+      <div class="exemplo-corrida"><span class="ex-label">Centro → Palmeiras (4km)</span><span class="ex-valor">~R$10,80</span></div>
+      <div class="exemplo-corrida"><span class="ex-label">Centro → Porto Novo (7km)</span><span class="ex-valor">~R$16,80</span></div>
+    </div>
+
+    <div class="periodo-card" style="border-color:#6366f1">
+      <div class="periodo-header">
+        <div><div class="periodo-nome" style="color:#6366f1">🌙 Noturno</div><div style="font-size:12px;color:var(--muted)">22h às 6h</div></div>
+        <div class="periodo-mult" style="color:#6366f1">1.2x</div>
+      </div>
+      <div class="periodo-det">Tarifa normal × 1.2<br>Segurança e disponibilidade noturna</div>
+      <div class="exemplo-corrida"><span class="ex-label">Centro → Palmeiras (4km)</span><span class="ex-valor">~R$10,80</span></div>
+    </div>
+
+    <div class="periodo-card" style="border-color:#8b5cf6">
+      <div class="periodo-header">
+        <div><div class="periodo-nome" style="color:#8b5cf6">🗓️ Fim de Semana</div><div style="font-size:12px;color:var(--muted)">Sábado e Domingo</div></div>
+        <div class="periodo-mult" style="color:#8b5cf6">1.3x</div>
+      </div>
+      <div class="periodo-det">Tarifa normal × 1.3<br>Motoboy ganha 30% a mais</div>
+      <div class="exemplo-corrida"><span class="ex-label">Centro → Palmeiras (4km)</span><span class="ex-valor">~R$11,70</span></div>
+      <div class="exemplo-corrida"><span class="ex-label">Centro → Porto Novo (7km)</span><span class="ex-valor">~R$18,20</span></div>
+    </div>
+
+    <div class="periodo-card" style="border-color:#f59e0b">
+      <div class="periodo-header">
+        <div><div class="periodo-nome" style="color:#f59e0b">🎉 Feriado / Alta Temporada</div><div style="font-size:12px;color:var(--muted)">Feriados nacionais</div></div>
+        <div class="periodo-mult" style="color:#f59e0b">1.5x</div>
+      </div>
+      <div class="periodo-det">Tarifa normal × 1.5<br>Ainda mais barato que Uber em pico</div>
+      <div class="exemplo-corrida"><span class="ex-label">Centro → Palmeiras (4km)</span><span class="ex-valor">~R$13,50</span></div>
+      <div class="exemplo-corrida"><span class="ex-label">Centro → Martim de Sá (13km)</span><span class="ex-valor">~R$28,50</span></div>
+    </div>
+
+    <div style="background:var(--card);border-radius:16px;padding:16px;margin-top:8px;border-left:4px solid var(--laranja)">
+      <div style="font-size:13px;font-weight:800;margin-bottom:8px">Comparativo com Uber Moto</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.8">
+        Uber cobra: 25% a 40% de taxa<br>
+        MotoFácil cobra: <span style="color:var(--laranja);font-weight:700">só 10%</span><br><br>
+        Corrida de R$10 no Uber → motoboy recebe R$6–7,50<br>
+        Corrida de R$10 no MotoFácil → motoboy recebe <span style="color:#22c55e;font-weight:700">R$9,00</span>
+      </div>
+    </div>
+
+    <div style="height:16px"></div>
+    <button class="btn-full" onclick="show('passageiro-form')">🏍️ Pedir corrida agora</button>
+  </div>
+</div>
+
+<!-- ADMIN LOGIN -->
+<div id="admin-login" class="screen">
+  <div style="font-size:52px;text-align:center">🔐</div>
+  <h2 style="font-family:'Bebas Neue',sans-serif;font-size:34px">Área Admin</h2>
+  <p style="color:var(--muted);font-size:13px">Acesso restrito ao administrador</p>
+  <div class="field" style="width:100%;padding:0 0"><label>Senha</label><input id="admin-senha" type="password" placeholder="Digite a senha" onkeydown="if(event.key==='Enter')abrirAdmin()"/></div>
+  <span id="admin-erro">❌ Senha incorreta</span>
+  <button class="btn-full" onclick="abrirAdmin()">Entrar</button>
+  <button class="btn-ghost" onclick="show('role-select')">Voltar</button>
+</div>
+
+<!-- ADMIN PAINEL -->
+<div id="admin-painel" class="screen">
+  <div class="topbar">
+    <button class="back-btn" onclick="show('role-select')">←</button>
+    <div class="logo">Admin</div>
+    <div style="width:38px"></div>
+  </div>
+  <div class="stats-grid">
+    <div class="stat-box"><div class="stat-num" id="total-motoristas">0</div><div class="stat-label">Motoristas</div></div>
+    <div class="stat-box"><div class="stat-num" id="total-corridas">0</div><div class="stat-label">Corridas</div></div>
+    <div class="stat-box"><div class="stat-num" style="font-size:20px;padding-top:6px" id="receita-total">R$0</div><div class="stat-label">Sua receita</div></div>
+  </div>
+  <div class="admin-tabs">
+    <div class="admin-tab active" onclick="switchTab('corridas-tab',this)">🚨 Corridas</div>
+    <div class="admin-tab" onclick="switchTab('motoristas-tab',this)">🏍️ Motoristas</div>
+  </div>
+  <div id="corridas-tab" class="admin-section active">
+    <div class="section-title">Corridas em tempo real</div>
+    <div id="lista-corridas"><p class="vazio">Carregando...</p></div>
+  </div>
+  <div id="motoristas-tab" class="admin-section">
+    <div class="section-title">Motoristas cadastrados</div>
+    <div id="lista-motoristas"><p class="vazio">Carregando...</p></div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>
