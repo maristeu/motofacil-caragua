@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>MotoFácil Caraguá</title>
+
+<!-- Google Maps -->
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyASBWmhgYrx_fV354xLJsL_7oPv3do023o&libraries=places,geometry&language=pt-BR&region=BR"></script>
+
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCzhq4KXViS7fI0ax8fwzCmNpmfaotd6FU",
+    authDomain: "pizzaria-cjrv.firebaseapp.com",
+    projectId: "pizzaria-cjrv",
+    storageBucket: "pizzaria-cjrv.firebasestorage.app",
+    messagingSenderId: "952169931185",
+    appId: "1:952169931185:web:f3913482682a81affd5d90"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  window._db = db;
+  window._firebase = { collection, addDoc, onSnapshot, doc, updateDoc, query, orderBy, serverTimestamp };
+</script>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&display=swap');
+  :root{--laranja:#FF5E1A;--rosa:#D9004C;--grad:linear-gradient(135deg,#FF5E1A,#D9004C);--dark:#0D0D0D;--card:#1A1A1A;--border:#2A2A2A;--muted:#888}
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{background:var(--dark);color:#fff;font-family:'Inter',sans-serif;display:flex;justify-content:center}
+  .phone{width:100%;max-width:440px;min-height:100vh}
+  .screen{display:none;flex-direction:column;min-height:100vh;animation:fadeIn .25s ease}
+  .screen.active{display:flex}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+  #splash{background:var(--grad);align-items:center;justify-content:center;gap:10px;padding:40px 24px;text-align:center}
+  #splash .icon{font-size:80px;animation:bounce 1.5s ease infinite alternate}
+  @keyframes bounce{from{transform:translateY(0)}to{transform:translateY(-10px)}}
+  #splash h1{font-family:'Bebas Neue',sans-serif;font-size:64px;line-height:1;letter-spacing:2px}
+  #splash p{font-size:14px;opacity:.85}
+
+  .btn-full{width:100%;background:var(--grad);color:#fff;border:none;border-radius:16px;padding:18px;font-family:'Inter',sans-serif;font-size:16px;font-weight:800;cursor:pointer;transition:transform .15s,opacity .15s}
+  .btn-full:active{transform:scale(.98);opacity:.9}
+  .btn-full:disabled{opacity:.4;cursor:not-allowed}
+  .btn-ghost{width:100%;background:rgba(255,255,255,.12);color:#fff;border:1.5px solid rgba(255,255,255,.25);border-radius:16px;padding:15px;font-family:'Inter',sans-serif;font-size:15px;font-weight:700;cursor:pointer}
+
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:20px 20px 8px}
+  .topbar .logo{font-family:'Bebas Neue',sans-serif;font-size:26px;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .back-btn{background:var(--card);border:none;color:#fff;width:38px;height:38px;border-radius:12px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+
+  .tarifa-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;border:1px solid}
+
+  #role-select{align-items:center;justify-content:center;padding:32px 24px;gap:14px}
+  #role-select h2{font-family:'Bebas Neue',sans-serif;font-size:36px;text-align:center}
+  .role-card{width:100%;background:var(--card);border-radius:20px;padding:22px;border:2px solid var(--border);cursor:pointer;transition:border-color .2s,transform .15s;display:flex;align-items:center;gap:16px}
+  .role-card:active{transform:scale(.98)}
+  .role-card.destaque{border-color:transparent;background:var(--grad)}
+  .role-icon{font-size:38px}
+  .role-info h3{font-size:17px;font-weight:800}
+  .role-info p{font-size:13px;color:var(--muted);margin-top:3px}
+  .role-card.destaque .role-info p{color:rgba(255,255,255,.8)}
+
+  .form-wrap{padding:16px 20px 40px;flex:1}
+  .form-title{font-family:'Bebas Neue',sans-serif;font-size:30px;margin-bottom:4px}
+  .form-sub{color:var(--muted);font-size:13px;margin-bottom:20px;line-height:1.5}
+  .field{margin-bottom:12px;position:relative}
+  .field label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px}
+  .field input{width:100%;background:var(--card);border:1.5px solid var(--border);border-radius:14px;padding:14px 16px;color:#fff;font-family:'Inter',sans-serif;font-size:15px;outline:none;transition:border-color .2s}
+  .field input:focus{border-color:var(--laranja)}
+  .field input::placeholder{color:var(--muted)}
+  .field .gps-btn{position:absolute;right:12px;bottom:12px;background:var(--laranja);border:none;border-radius:10px;padding:6px 10px;color:#fff;font-size:16px;cursor:pointer}
+  .divider{height:1px;background:var(--border);margin:14px 0}
+
+  /* MAPA */
+  #mapa-container{margin:0 16px 12px;border-radius:20px;overflow:hidden;height:200px;position:relative}
+  #mapa{width:100%;height:100%}
+  .mapa-overlay{position:absolute;top:10px;right:10px;background:rgba(13,13,13,.85);border-radius:10px;padding:6px 12px;font-size:12px;font-weight:700;color:#4ade80;display:flex;align-items:center;gap:6px}
+  .mapa-overlay::before{content:'';width:8px;height:8px;border-radius:50%;background:#4ade80;animation:pulse 1.5s ease infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}
+
+  /* PREVIEW PREÇO */
+  #preco-preview{background:var(--grad);border-radius:16px;padding:18px;margin-bottom:14px;display:none}
+  .prev-header{display:flex;justify-content:space-between;align-items:flex-start}
+  .prev-valor{font-family:'Bebas Neue',sans-serif;font-size:56px;line-height:1}
+  .prev-economia{background:rgba(0,0,0,.2);border-radius:10px;padding:6px 10px;text-align:right}
+  .prev-economia .eco-label{font-size:10px;opacity:.8}
+  .prev-economia .eco-valor{font-size:16px;font-weight:800}
+  .prev-det{font-size:13px;opacity:.85;margin-top:8px}
+  .prev-tarifa{font-size:12px;font-weight:700;margin-top:4px;opacity:.9}
+
+  /* ROTA INFO */
+  .rota-info{background:var(--card);border-radius:14px;padding:14px;margin-bottom:12px;display:none}
+  .rota-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px}
+  .rota-row:last-child{border-bottom:none}
+  .rota-label{color:var(--muted)}
+  .rota-valor{font-weight:700}
+
+  .success-screen{align-items:center;justify-content:center;padding:40px 24px;gap:12px;text-align:center}
+  .check-circle{width:100px;height:100px;border-radius:50%;background:var(--grad);display:flex;align-items:center;justify-content:center;font-size:48px;animation:popIn .4s cubic-bezier(.175,.885,.32,1.275)}
+  @keyframes popIn{from{transform:scale(0);opacity:0}to{transform:scale(1);opacity:1}}
+  .success-screen h2{font-family:'Bebas Neue',sans-serif;font-size:34px}
+  .success-screen p{color:var(--muted);font-size:14px;line-height:1.6}
+  .info-box{background:var(--card);border-radius:16px;padding:18px;width:100%;margin:8px 0}
+  .info-row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border)}
+  .info-row:last-child{border-bottom:none}
+  .info-label{font-size:12px;color:var(--muted)}
+  .info-value{font-size:14px;font-weight:700}
+  .info-value.destaque{color:var(--laranja)}
+
+  #admin-login{align-items:center;justify-content:center;padding:40px 24px;gap:14px}
+  #admin-login h2{font-family:'Bebas Neue',sans-serif;font-size:34px}
+  #admin-erro{color:#f87171;font-size:13px;display:none}
+  #admin-painel{padding-bottom:20px}
+  .stats-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:0 16px 16px}
+  .stat-box{background:var(--card);border-radius:14px;padding:14px;text-align:center}
+  .stat-num{font-family:'Bebas Neue',sans-serif;font-size:32px;color:var(--laranja)}
+  .stat-label{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+  .admin-tabs{display:flex;border-bottom:1px solid var(--border);margin:0 16px 14px}
+  .admin-tab{flex:1;padding:12px;text-align:center;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
+  .admin-tab.active{color:var(--laranja);border-bottom-color:var(--laranja)}
+  .admin-section{display:none;padding:0 16px}
+  .admin-section.active{display:block}
+  .admin-item{background:var(--card);border-radius:16px;padding:16px;margin-bottom:10px;border:1.5px solid var(--border)}
+  .admin-item-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .badge{font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;text-transform:uppercase;letter-spacing:1px}
+  .admin-valor{font-family:'Bebas Neue',sans-serif;font-size:26px}
+  .admin-det{font-size:13px;color:var(--muted);margin-bottom:3px}
+  .btn-aceitar-admin{width:100%;margin-top:10px;background:#22c55e;color:#fff;border:none;border-radius:12px;padding:12px;font-family:'Inter',sans-serif;font-size:14px;font-weight:700;cursor:pointer}
+  .vazio{color:var(--muted);text-align:center;padding:32px 0;font-size:14px}
+  .section-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:12px}
+
+  /* MOTORISTA FORM */
+  #motorista-form .form-wrap{padding:16px 20px 40px}
+</style>
+</head>
+<body>
+<div class="phone">
+
+<!-- SPLASH -->
+<div id="splash" class="screen active">
+  <div class="icon">🏍️</div>
+  <h1>MotoFácil<br>Caraguá</h1>
+  <p>A corrida é sua. O lucro é seu.</p>
+  <p style="font-size:12px;opacity:.7;margin-bottom:8px">Taxa justa de só 10% • Pix na hora</p>
+  <div class="tarifa-badge" id="badge-splash" style="margin-top:4px"></div>
+  <button class="btn-full" onclick="show('role-select')" style="background:#fff;color:#D9004C;max-width:260px;margin-top:16px">Entrar no app</button>
+</div>
+
+<!-- ROLE SELECT -->
+<div id="role-select" class="screen">
+  <div style="height:40px"></div>
+  <div style="font-size:52px;text-align:center">👋</div>
+  <h2 style="font-family:'Bebas Neue',sans-serif;font-size:34px;text-align:center;margin:8px 24px 4px">Como quer usar o MotoFácil?</h2>
+  <div class="tarifa-badge" id="badge-role" style="margin-bottom:4px"></div>
+  <div style="padding:0 24px;width:100%;display:flex;flex-direction:column;gap:12px">
+    <div class="role-card destaque" onclick="show('passageiro-form');iniciarMapa()">
+      <div class="role-icon">🙋</div>
+      <div class="role-info"><h3>Sou passageiro</h3><p>Quero pedir uma corrida agora</p></div>
+    </div>
+    <div class="role-card" onclick="show('motorista-form')">
+      <div class="role-icon">🏍️</div>
+      <div class="role-info"><h3>Sou motorista</h3><p style="color:var(--muted)">Quero me cadastrar na plataforma</p></div>
+    </div>
+    <button class="btn-ghost" onclick="show('admin-login')" style="margin-top:4px">🔐 Área admin</button>
+  </div>
+</div>
+
+<!-- PASSAGEIRO FORM -->
+<div id="passageiro-form" class="screen">
+  <div class="topbar">
+    <button class="back-btn" onclick="show('role-select')">←</button>
+    <div class="logo">Pedir corrida</div>
+    <div class="tarifa-badge" id="badge-form" style="font-size:11px;padding:4px 10px"></div>
+  </div>
+
+  <div id="mapa-container">
+    <div id="mapa"></div>
+    <div class="mapa-overlay" id="mapa-status">Localizando você...</div>
+  </div>
+
+  <div class="form-wrap">
+    <div class="field">
+      <label>Seu nome</label>
+      <input id="p-nome" type="text" placeholder="Ex: Maria Silva"/>
+    </div>
+    <div class="field">
+      <label>Seu WhatsApp</label>
+      <input id="p-tel" type="tel" placeholder="Ex: 12 99999-9999"/>
+    </div>
+    <div class="divider"></div>
+    <div class="field">
+      <label>Ponto de partida</label>
+      <input id="p-origem" type="text" placeholder="Detectando sua localização..."/>
+      <button class="gps-btn" onclick="detectarGPS()" title="Usar minha localização">📍</button>
+    </div>
+    <div class="field">
+      <label>Destino</label>
+      <input id="p-destino" type="text" placeholder="Ex: Praia das Palmeiras, Caraguatatuba"/>
+    </div>
+
+    <div id="rota-info" class="rota-info">
+      <div class="rota-row"><span class="rota-label">📏 Distância real</span><span class="rota-valor" id="rota-dist">—</span></div>
+      <div class="rota-row"><span class="rota-label">⏱️ Tempo estimado</span><span class="rota-valor" id="rota-tempo">—</span></div>
+      <div class="rota-row"><span class="rota-label">🏍️ Motoboy recebe</span><span class="rota-valor" id="rota-motoboy" style="color:#22c55e">—</span></div>
+    </div>
+
+    <div id="preco-preview">
+      <div class="prev-header">
+        <div>
+          <div style="font-size:11px;opacity:.8;font-weight:600;text-transform:uppercase;letter-spacing:1px">Valor da corrida</div>
+          <div class="prev-valor" id="prev-total">R$0</div>
+        </div>
+        <div class="prev-economia">
+          <div class="eco-label">Economia vs Uber</div>
+          <div class="eco-valor" id="prev-economia">—</div>
+        </div>
+      </div>
+      <div class="prev-det" id="prev-det">— km • — min</div>
+      <div class="prev-tarifa" id="prev-tarifa"></div>
+    </div>
+
+    <button class="btn-full" id="btn-calcular" onclick="calcularRota()" style="margin-bottom:10px">🗺️ Calcular rota e preço</button>
+    <button class="btn-full" id="btn-pedir" onclick="pedirCorrida()" disabled style="opacity:.4">🏍️ Solicitar corrida</button>
+    <p style="font-size:12px;color:var(--muted);text-align:center;margin-top:12px">Pix direto ao motoboy no fim da corrida</p>
+  </div>
+</div>
+
+<!-- CORRIDA OK -->
+<div id="corrida-ok" class="screen success-screen">
+  <div class="check-circle">✓</div>
+  <h2>Pedido enviado!</h2>
+  <p>Um motoboy vai entrar em contato pelo WhatsApp em instantes.</p>
+  <div class="info-box">
+    <div class="info-row"><span class="info-label">Código</span><span class="info-value destaque" id="conf-id">—</span></div>
+    <div class="info-row"><span class="info-label">Distância real</span><span class="info-value" id="conf-dist">—</span></div>
+    <div class="info-row"><span class="info-label">Tempo estimado</span><span class="info-value" id="conf-tempo">—</span></div>
+    <div class="info-row"><span class="info-label">Valor total</span><span class="info-value destaque" id="conf-preco">—</span></div>
+    <div class="info-row"><span class="info-label">Tarifa</span><span class="info-value" id="conf-tarifa">—</span></div>
+    <div class="info-row"><span class="info-label">Pagamento</span><span class="info-value">Pix ao motorista no fim</span></div>
+  </div>
+  <button class="btn-full" onclick="show('role-select')">🏠 Voltar ao início</button>
+</div>
+
+<!-- MOTORISTA FORM -->
+<div id="motorista-form" class="screen">
+  <div class="topbar">
+    <button class="back-btn" onclick="show('role-select')">←</button>
+    <div class="logo">Cadastro</div>
+    <div style="width:38px"></div>
+  </div>
+  <div class="form-wrap">
+    <div class="form-title">Trabalhe com a gente 🏍️</div>
+    <div class="form-sub">Taxa de só 10%. Você fica com 90%. Ganhe mais nos fins de semana e feriados.</div>
+    <div class="field"><label>Nome completo</label><input id="m-nome" type="text" placeholder="Ex: João da Silva"/></div>
+    <div class="field"><label>WhatsApp</label><input id="m-tel" type="tel" placeholder="Ex: 12 99999-9999"/></div>
+    <div class="field"><label>Moto (modelo e ano)</label><input id="m-moto" type="text" placeholder="Ex: Honda CG 160 2022"/></div>
+    <div class="field"><label>Número da CNH</label><input id="m-cnh" type="text" placeholder="Ex: 12345678900"/></div>
+    <div class="field"><label>Chave Pix</label><input id="m-pix" type="text" placeholder="CPF, telefone ou e-mail"/></div>
+    <div style="height:16px"></div>
+    <button class="btn-full" id="btn-cadastrar" onclick="cadastrarMotorista()">Enviar cadastro</button>
+    <p style="font-size:12px;color:var(--muted);text-align:center;margin-top:12px">Análise em até 24h • Você receberá contato pelo WhatsApp</p>
+
+    <div style="background:var(--card);border-radius:14px;padding:14px;margin-top:16px;border-left:4px solid var(--laranja)">
+      <div style="font-size:12px;font-weight:800;margin-bottom:8px">Seus ganhos estimados</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.9">
+        Corrida normal R$10 → você recebe <span style="color:#22c55e;font-weight:700">R$9,00</span><br>
+        Fim de semana R$13 → você recebe <span style="color:#22c55e;font-weight:700">R$11,70</span><br>
+        Feriado R$15 → você recebe <span style="color:#22c55e;font-weight:700">R$13,50</span><br>
+        <span style="color:var(--laranja);font-weight:700">Uber te pagaria só R$6–7 na mesma corrida</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CADASTRO OK -->
+<div id="cadastro-ok" class="screen success-screen">
+  <div class="check-circle">✓</div>
+  <h2>Cadastro enviado!</h2>
+  <p>Vamos analisar e entrar em contato em até 24h pelo WhatsApp.</p>
+  <div class="info-box">
+    <div class="info-row"><span class="info-label">Sua taxa</span><span class="info-value destaque">só 10%</span></div>
+    <div class="info-row"><span class="info-label">Você recebe</span><span class="info-value destaque">90% de cada corrida</span></div>
+    <div class="info-row"><span class="info-label">Fim de semana</span><span class="info-value" style="color:#8b5cf6">+30% no valor</span></div>
+    <div class="info-row"><span class="info-label">Feriados</span><span class="info-value" style="color:#f59e0b">+50% no valor</span></div>
+    <div class="info-row"><span class="info-label">Pagamento</span><span class="info-value">Pix na hora</span></div>
+  </div>
+  <button class="btn-full" onclick="show('role-select')">🏠 Voltar ao início</button>
+</div>
+
+<!-- ADMIN LOGIN -->
+<div id="admin-login" class="screen" style="align-items:center;justify-content:center;padding:40px 24px;gap:14px">
+  <div style="font-size:52px;text-align:center">🔐</div>
+  <h2 style="font-family:'Bebas Neue',sans-serif;font-size:34px">Área Admin</h2>
+  <p style="color:var(--muted);font-size:13px">Acesso restrito ao administrador</p>
+  <div class="field" style="width:100%"><label>Senha</label><input id="admin-senha" type="password" placeholder="Digite a senha" onkeydown="if(event.key==='Enter')abrirAdmin()"/></div>
+  <span id="admin-erro" style="color:#f87171;font-size:13px;display:none">❌ Senha incorreta</span>
+  <button class="btn-full" onclick="abrirAdmin()">Entrar</button>
+  <button class="btn-ghost" onclick="show('role-select')">Voltar</button>
+</div>
+
+<!-- ADMIN PAINEL -->
+<div id="admin-painel" class="screen">
+  <div class="topbar">
+    <button class="back-btn" onclick="show('role-select')">←</button>
+    <div class="logo">Admin</div>
+    <div style="width:38px"></div>
+  </div>
+  <div class="stats-grid">
+    <div class="stat-box"><div class="stat-num" id="total-motoristas">0</div><div class="stat-label">Motoristas</div></div>
+    <div class="stat-box"><div class="stat-num" id="total-corridas">0</div><div class="stat-label">Corridas</div></div>
+    <div class="stat-box"><div class="stat-num" style="font-size:18px;padding-top:8px" id="receita-total">R$0</div><div class="stat-label">Receita</div></div>
+  </div>
+  <div class="admin-tabs">
+    <div class="admin-tab active" onclick="switchTab('corridas-tab',this)">🚨 Corridas</div>
+    <div class="admin-tab" onclick="switchTab('motoristas-tab',this)">🏍️ Motoristas</div>
+  </div>
+  <div id="corridas-tab" class="admin-section active">
+    <div class="section-title">Corridas em tempo real</div>
+    <div id="lista-corridas"><p class="vazio">Carregando...</p></div>
+  </div>
+  <div id="motoristas-tab" class="admin-section">
+    <div class="section-title">Motoristas cadastrados</div>
+    <div id="lista-motoristas"><p class="vazio">Carregando...</p></div>
+  </div>
+</div>
+
+</div>
+
+<script>
+const ADMIN_WA = "5511967581409";
+const MAPS_KEY = "AIzaSyASBWmhgYrx_fV354xLJsL_7oPv3do023o";
+
+let mapa, marcadorOrigem, marcadorDestino, rotaRenderer;
+let corridaCalc = null;
+
+// ---- TARIFA ----
+function getTarifa() {
+  const h = new Date().getHours(), d = new Date().getDay();
+  const feriados = ["01-01","21-04","01-05","07-09","12-10","02-11","15-11","25-12"];
+  const hoje = `${String(new Date().getMonth()+1).padStart(2,'0')}-${String(new Date().getDate()).padStart(2,'0')}`;
+  if(feriados.includes(hoje)) return {mult:1.5,label:"🎉 Feriado",cor:"#f59e0b"};
+  if(d===0||d===6) return {mult:1.3,label:"🗓️ Fim de semana",cor:"#8b5cf6"};
+  if((h>=7&&h<=9)||(h>=17&&h<=19)) return {mult:1.2,label:"⏰ Horário de pico",cor:"#3b82f6"};
+  if(h>=22||h<6) return {mult:1.2,label:"🌙 Noturno",cor:"#6366f1"};
+  return {mult:1.0,label:"✅ Tarifa normal",cor:"#22c55e"};
+}
+
+function atualizarBadges() {
+  const {mult,label,cor} = getTarifa();
+  document.querySelectorAll('.tarifa-badge').forEach(el => {
+    el.textContent = `${label} • ${mult}x`;
+    el.style.background = cor+'22';
+    el.style.color = cor;
+    el.style.borderColor = cor+'55';
+  });
+}
+
+// ---- NAVEGAÇÃO ----
+window.show = function(id) {
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0,0);
+}
+
+// ---- MAPA ----
+window.iniciarMapa = function() {
+  setTimeout(() => {
+    if(!window.google) return;
+    const centro = {lat:-23.620, lng:-45.412};
+    mapa = new google.maps.Map(document.getElementById('mapa'), {
+      center: centro, zoom: 13,
+      disableDefaultUI: true,
+      styles: [
+        {elementType:"geometry",stylers:[{color:"#1a2e1a"}]},
+        {elementType:"labels.text.fill",stylers:[{color:"#8ec38e"}]},
+        {elementType:"labels.text.stroke",stylers:[{color:"#1a2e1a"}]},
+        {featureType:"road",elementType:"geometry",stylers:[{color:"#2d4a2d"}]},
+        {featureType:"road.arterial",elementType:"geometry",stylers:[{color:"#3d6b3d"}]},
+        {featureType:"water",elementType:"geometry",stylers:[{color:"#0d1f1d"}]},
+        {featureType:"poi",stylers:[{visibility:"off"}]}
+      ]
+    });
+    rotaRenderer = new google.maps.DirectionsRenderer({
+      map: mapa,
+      suppressMarkers: false,
+      polylineOptions: {strokeColor:'#FF5E1A',strokeWeight:4}
+    });
+
+    // Autocomplete destino
+    const inputDest = document.getElementById('p-destino');
+    const autocomplete = new google.maps.places.Autocomplete(inputDest, {
+      componentRestrictions: {country:'BR'},
+      bounds: new google.maps.LatLngBounds(
+        new google.maps.LatLng(-23.70,-45.50),
+        new google.maps.LatLng(-23.55,-45.35)
+      ),
+      strictBounds: false,
+      fields: ['formatted_address','geometry','name']
+    });
+
+    // Autocomplete origem
+    const inputOrig = document.getElementById('p-origem');
+    const autocompleteOrig = new google.maps.places.Autocomplete(inputOrig, {
+      componentRestrictions: {country:'BR'},
+      bounds: new google.maps.LatLngBounds(
+        new google.maps.LatLng(-23.70,-45.50),
+        new google.maps.LatLng(-23.55,-45.35)
+      ),
+      fields: ['formatted_address','geometry','name']
+    });
+
+    detectarGPS();
+  }, 300);
+}
+
+window.detectarGPS = function() {
+  const status = document.getElementById('mapa-status');
+  status.textContent = '📍 Localizando...';
+  if(!navigator.geolocation) {
+    document.getElementById('p-origem').placeholder = 'Digite seu endereço manualmente';
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(pos => {
+    const lat = pos.coords.latitude, lng = pos.coords.longitude;
+    window._origemLatLng = {lat, lng};
+
+    if(mapa) {
+      mapa.setCenter({lat,lng});
+      if(marcadorOrigem) marcadorOrigem.setMap(null);
+      marcadorOrigem = new google.maps.Marker({
+        position:{lat,lng}, map:mapa,
+        icon:{url:'https://maps.google.com/mapfiles/ms/icons/green-dot.png'}
+      });
+    }
+
+    // Geocode reverso
+    const geocoder = new google.maps.Geocoder();
+    geocoder.geocode({location:{lat,lng}}, (res,status2) => {
+      if(status2==='OK'&&res[0]) {
+        document.getElementById('p-origem').value = res[0].formatted_address;
+        document.getElementById('mapa-status').textContent = '✅ Localização detectada';
+        document.getElementById('mapa-status').style.color = '#4ade80';
+      }
+    });
+  }, () => {
+    status.textContent = '⚠️ Digite o endereço';
+    document.getElementById('p-origem').placeholder = 'Ex: Rua das Flores, Centro, Caraguatatuba';
+  });
+}
+
+// ---- CALCULAR ROTA REAL ----
+window.calcularRota = function() {
+  const origem = document.getElementById('p-origem').value.trim();
+  const destino = document.getElementById('p-destino').value.trim();
+  const btn = document.getElementById('btn-calcular');
+
+  if(!origem||!destino){alert('Preencha origem e destino!');return;}
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Calculando rota...';
+
+  const service = new google.maps.DirectionsService();
+  service.route({
+    origin: origem + (origem.includes('Caraguatatuba')?'':' Caraguatatuba SP Brasil'),
+    destination: destino + (destino.includes('Caraguatatuba')?'':' Caraguatatuba SP Brasil'),
+    travelMode: google.maps.TravelMode.DRIVING
+  }, (result, status) => {
+    btn.disabled = false;
+    btn.textContent = '🔄 Recalcular rota';
+
+    if(status !== 'OK'){
+      alert('Não consegui calcular essa rota. Verifique os endereços e tente novamente.');
+      return;
+    }
+
+    const leg = result.routes[0].legs[0];
+    const distKm = leg.distance.value / 1000;
+    const minutos = leg.duration.value / 60;
+    const {mult,label,cor} = getTarifa();
+
+    const TARIFA_BASE = 3.50, POR_KM = 0.97, POR_MIN = 0.16, MINIMO = 7.00;
+    const bruto = (TARIFA_BASE + POR_KM*distKm + POR_MIN*minutos) * mult;
+    const total = Math.max(bruto, MINIMO);
+    const motoboy = total * 0.9;
+    const plataforma = total * 0.1;
+    const precoUber = total * 1.3; // Uber ~30% mais caro
+    const economia = precoUber - total;
+
+    corridaCalc = {
+      total: total.toFixed(2),
+      motoboy: motoboy.toFixed(2),
+      plataforma: plataforma.toFixed(2),
+      dist: leg.distance.text,
+      tempo: leg.duration.text,
+      mult, label, origem, destino
+    };
+
+    // Mostra rota no mapa
+    if(rotaRenderer) rotaRenderer.setDirections(result);
+
+    // Atualiza UI
+    document.getElementById('rota-dist').textContent = leg.distance.text;
+    document.getElementById('rota-tempo').textContent = leg.duration.text;
+    document.getElementById('rota-motoboy').textContent = `R$${motoboy.toFixed(2)}`;
+    document.getElementById('rota-info').style.display = 'block';
+
+    document.getElementById('prev-total').textContent = `R$${total.toFixed(2)}`;
+    document.getElementById('prev-economia').textContent = `R$${economia.toFixed(2)}`;
+    document.getElementById('prev-det').textContent = `${leg.distance.text} • ${leg.duration.text}`;
+    document.getElementById('prev-tarifa').textContent = `${label} (${mult}x) — cálculo pelo Google Maps`;
+    document.getElementById('preco-preview').style.display = 'block';
+
+    document.getElementById('btn-pedir').disabled = false;
+    document.getElementById('btn-pedir').style.opacity = '1';
+    document.getElementById('btn-pedir').textContent = `🏍️ Solicitar por R$${total.toFixed(2)}`;
+  });
+}
+
+// ---- PEDIR CORRIDA ----
+window.pedirCorrida = async function() {
+  const nome = document.getElementById('p-nome').value.trim();
+  const tel = document.getElementById('p-tel').value.replace(/\D/g,'');
+  if(!nome||!tel){alert('Preencha seu nome e WhatsApp!');return;}
+  if(!corridaCalc){alert('Calcule a rota primeiro!');return;}
+
+  const btn = document.getElementById('btn-pedir');
+  btn.disabled = true; btn.textContent = 'Enviando...';
+
+  const db = window._db;
+  const {collection,addDoc,serverTimestamp} = window._firebase;
+
+  try {
+    const ref = await addDoc(collection(db,"corridas"), {
+      passageiro: nome, telefone: tel,
+      origem: corridaCalc.origem, destino: corridaCalc.destino,
+      preco: parseFloat(corridaCalc.total),
+      ganhoMotoboy: parseFloat(corridaCalc.motoboy),
+      distancia: corridaCalc.dist, tempo: corridaCalc.tempo,
+      multiplicador: corridaCalc.mult, periodoTarifa: corridaCalc.label,
+      status: "aguardando", criadoEm: serverTimestamp()
+    });
+
+    const msg = `🚨 *NOVA CORRIDA - MotoFácil Caraguá*\n\n👤 ${nome}\n📞 ${tel}\n📍 ${corridaCalc.origem}\n🏁 ${corridaCalc.destino}\n📏 ${corridaCalc.dist} • ${corridaCalc.tempo}\n💰 R$${corridaCalc.total} (${corridaCalc.label} ${corridaCalc.mult}x)\n🏍️ Motoboy recebe: R$${corridaCalc.motoboy}\n\n_ID: ${ref.id.slice(0,8).toUpperCase()}_`;
+    window.open(`https://wa.me/${ADMIN_WA}?text=${encodeURIComponent(msg)}`,'_blank');
+
+    document.getElementById('conf-id').textContent = ref.id.slice(0,8).toUpperCase();
+    document.getElementById('conf-dist').textContent = corridaCalc.dist;
+    document.getElementById('conf-tempo').textContent = corridaCalc.tempo;
+    document.getElementById('conf-preco').textContent = `R$${corridaCalc.total}`;
+    document.getElementById('conf-tarifa').textContent = `${corridaCalc.label} (${corridaCalc.mult}x)`;
+    show('corrida-ok');
+  } catch(e){alert('Erro. Tente novamente.');console.error(e);}
+  btn.disabled = false;
+}
+
+// ---- CADASTRO MOTORISTA ----
+window.cadastrarMotorista = async function() {
+  const nome = document.getElementById('m-nome').value.trim();
+  const tel = document.getElementById('m-tel').value.replace(/\D/g,'');
+  const moto = document.getElementById('m-moto').value.trim();
+  const cnh = document.getElementById('m-cnh').value.trim();
+  const pix = document.getElementById('m-pix').value.trim();
+  if(!nome||!tel||!moto||!cnh||!pix){alert('Preencha todos os campos!');return;}
+
+  const btn = document.getElementById('btn-cadastrar');
+  btn.disabled = true; btn.textContent = 'Enviando...';
+
+  const db = window._db;
+  const {collection,addDoc,serverTimestamp} = window._firebase;
+
+  try {
+    await addDoc(collection(db,"motoristas"),{
+      nome,telefone:tel,moto,cnh,pix,
+      status:"pendente",corridas:0,criadoEm:serverTimestamp()
+    });
+    const msg = `🏍️ *NOVO MOTORISTA - MotoFácil Caraguá*\n\nNome: ${nome}\nTel: ${tel}\nMoto: ${moto}\nCNH: ${cnh}\nPix: ${pix}`;
+    window.open(`https://wa.me/${ADMIN_WA}?text=${encodeURIComponent(msg)}`,'_blank');
+    show('cadastro-ok');
+  } catch(e){alert('Erro. Tente novamente.');}
+  btn.disabled = false;
+}
+
+// ---- ADMIN ----
+window.abrirAdmin = function() {
+  if(document.getElementById('admin-senha').value !== 'motofacil2024'){
+    document.getElementById('admin-erro').style.display='block'; return;
+  }
+  show('admin-painel');
+  const db = window._db;
+  const {collection,onSnapshot,doc,updateDoc,query,orderBy} = window._firebase;
+
+  onSnapshot(query(collection(db,"corridas"),orderBy("criadoEm","desc")), snap => {
+    document.getElementById('total-corridas').textContent = snap.size;
+    let receita = 0;
+    const lista = document.getElementById('lista-corridas');
+    lista.innerHTML = snap.empty ? '<p class="vazio">Nenhuma corrida ainda</p>' : '';
+    snap.forEach(d => {
+      const c = d.data();
+      const taxa = (c.preco*0.1).toFixed(2);
+      receita += parseFloat(taxa);
+      const cor = c.status==='aguardando'?'#f59e0b':c.status==='aceita'?'#22c55e':'#888';
+      lista.innerHTML += `<div class="admin-item">
+        <div class="admin-item-top"><span class="badge" style="background:${cor}22;color:${cor};border:1px solid ${cor}44">${c.status}</span><span class="admin-valor">R$${c.preco?.toFixed(2)}</span></div>
+        <div class="admin-det">👤 ${c.passageiro} • 📞 ${c.telefone}</div>
+        <div class="admin-det">📍 ${c.origem} → ${c.destino}</div>
+        <div class="admin-det">📏 ${c.distancia||'—'} • ⏱️ ${c.tempo||'—'}</div>
+        <div class="admin-det" style="color:#f59e0b">⏱️ ${c.periodoTarifa||'Normal'} • Sua taxa: R$${taxa}</div>
+        ${c.status==='aguardando'?`<button class="btn-aceitar-admin" onclick="aceitarCorrida('${d.id}')">✅ Aceitar corrida</button>`:''}
+      </div>`;
+    });
+    document.getElementById('receita-total').textContent = `R$${receita.toFixed(2)}`;
+  });
+
+  onSnapshot(query(collection(db,"motoristas"),orderBy("criadoEm","desc")), snap => {
+    document.getElementById('total-motoristas').textContent = snap.size;
+    const lista = document.getElementById('lista-motoristas');
+    lista.innerHTML = snap.empty ? '<p class="vazio">Nenhum motorista ainda</p>' : '';
+    snap.forEach(d => {
+      const m = d.data();
+      const cor = m.status==='aprovado'?'#22c55e':'#f59e0b';
+      lista.innerHTML += `<div class="admin-item">
+        <div class="admin-item-top"><span class="badge" style="background:${cor}22;color:${cor};border:1px solid ${cor}44">${m.status}</span><span style="font-size:12px;color:#888">${m.corridas} corridas</span></div>
+        <div class="admin-det">👤 ${m.nome} • 🏍️ ${m.moto}</div>
+        <div class="admin-det">📞 ${m.telefone} • Pix: ${m.pix}</div>
+        ${m.status==='pendente'?`<button class="btn-aceitar-admin" onclick="aprovarMotorista('${d.id}','${m.nome}','${m.telefone}')">✅ Aprovar motorista</button>`:''}
+      </div>`;
+    });
+  });
+}
+
+window.aceitarCorrida = async function(id) {
+  const {doc,updateDoc} = window._firebase;
+  await updateDoc(doc(window._db,"corridas",id),{status:"aceita"});
+}
+
+window.aprovarMotorista = async function(id,nome,tel) {
+  const {doc,updateDoc} = window._firebase;
+  await updateDoc(doc(window._db,"motoristas",id),{status:"aprovado"});
+  const msg = `✅ *MotoFácil Caraguá*\n\nOlá ${nome}! Seu cadastro foi aprovado! Bem-vindo à equipe! 🏍️\n\nFique online e aguarde as corridas.`;
+  window.open(`https://wa.me/55${tel}?text=${encodeURIComponent(msg)}`,'_blank');
+}
+
+window.switchTab = function(id,el) {
+  document.querySelectorAll('.admin-section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.admin-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  el.classList.add('active');
+}
+
+// Init
+atualizarBadges();
+setInterval(atualizarBadges, 60000);
+</script>
+</body>
+</html>
